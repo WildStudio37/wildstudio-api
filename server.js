@@ -1,60 +1,69 @@
-const express = require("express");
-const cors = require("cors");
-const { Client, GatewayIntentBits } = require("discord.js");
-require("dotenv").config();
+import express from "express";
+import cors from "cors";
+import dotenv from "dotenv";
+import { Client, GatewayIntentBits } from "discord.js";
+
+dotenv.config();
 
 const app = express();
-app.use(cors({
-  origin: "*"
-}));
-app.use(express.json());
+app.use(cors({ origin: "*" }));
 
-// ===== DISCORD BOT =====
+let botOnline = false;
+
 const client = new Client({
-  intents: [
-    GatewayIntentBits.Guilds,
-    GatewayIntentBits.GuildMessages,
-    GatewayIntentBits.MessageContent
-  ]
+  intents: [GatewayIntentBits.Guilds]
 });
 
-client.once("clientReady", () => {
-  console.log(`Bot online as ${client.user.tag}`);
+client.on("clientReady", () => {
+  console.log(`Bot ready as ${client.user.tag}`);
+  botOnline = true;
 });
 
-console.log("TOKEN LENGTH:", process.env.DISCORD_TOKEN?.length);
+client.on("disconnect", () => {
+  console.log("Bot disconnected");
+  botOnline = false;
+});
 
-// ===== API ROUTE =====
+client.on("error", () => {
+  console.log("Bot error");
+  botOnline = false;
+});
+
+client.login(process.env.DISCORD_TOKEN);
+
 app.get("/status", (req, res) => {
+
+  const services = [
+    {
+      name: "Discord Bot",
+      status: botOnline ? "operational" : "outage",
+      uptime: botOnline ? 99.99 : 0,
+      response_time: botOnline ? 85 : 0,
+      error_rate: botOnline ? 0.01 : 100,
+      description: "Handles automation, announcements and monitoring."
+    },
+    {
+      name: "WildStudio API",
+      status: "operational",
+      uptime: 99.98,
+      response_time: 120,
+      error_rate: 0.02,
+      description: "Core backend API powering website and automation."
+    }
+  ];
+
+  const overall =
+    services.some(s => s.status === "outage") ? "outage" :
+    services.some(s => s.status === "maintenance") ? "maintenance" :
+    "operational";
+
   res.json({
-    overall: "operational",
-    services: [
-      {
-        id: "discord",
-        name: "Discord Bot",
-        description: "Handles automation, announcements and infrastructure monitoring.",
-        status: client.isReady() ? "operational" : "outage",
-        uptime: 99.99,
-        response_time: 85,
-        error_rate: 0.01
-      },
-      {
-        id: "api",
-        name: "WildStudio API",
-        description: "Core backend API powering website and automation.",
-        status: "operational",
-        uptime: 99.98,
-        response_time: 120,
-        error_rate: 0.02
-      }
-    ],
+    overall,
+    services,
     updated_at: new Date().toISOString()
   });
+
 });
 
-// ===== START SERVER =====
-const PORT = process.env.PORT || 3000;
-
-app.listen(PORT, () => {
-  console.log(`API running on port ${PORT}`);
-});
+const PORT = process.env.PORT || 8080;
+app.listen(PORT, () => console.log(`API running on ${PORT}`));
