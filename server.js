@@ -18,37 +18,19 @@ const supabase = createClient(
   process.env.SUPABASE_KEY
 );
 
+let supabaseOnline = true;
+let lastSupabaseStatus = null;
+
 /* =========================
    Discord Bot Setup
 ========================= */
 
 let botOnline = false;
+let lastBotStatus = null;
 
 const client = new Client({
   intents: [GatewayIntentBits.Guilds]
 });
-
-/* =========================
-   Incident Helpers
-========================= */
-
-async function getLastIncidentEvent(service) {
-  const { data, error } = await supabase
-    .from("incidents")
-    .select("event_type")
-    .eq("service_name", service)
-    .order("created_at", { ascending: false })
-    .limit(1);
-
-  if (error) {
-    console.error("Error fetching last incident:", error.message);
-    return null;
-  }
-
-  if (!data || data.length === 0) return null;
-
-  return data[0].event_type;
-}
 
 async function logIncident(service, eventType, status) {
   try {
@@ -71,49 +53,63 @@ async function logIncident(service, eventType, status) {
 ========================= */
 
 client.on("clientReady", async () => {
-  console.log("Bot connected");
-  botOnline = true;
-
-  const lastEvent = await getLastIncidentEvent("Discord Bot");
-
-  if (lastEvent === "outage") {
+  if (lastBotStatus === "outage") {
     await logIncident("Discord Bot", "recovery", "operational");
   }
+  botOnline = true;
+  lastBotStatus = "operational";
 });
 
 client.on("disconnect", async () => {
-  console.log("Bot disconnected");
-  botOnline = false;
-
-  const lastEvent = await getLastIncidentEvent("Discord Bot");
-
-  if (lastEvent !== "outage") {
+  if (lastBotStatus !== "outage") {
     await logIncident("Discord Bot", "outage", "outage");
   }
+  botOnline = false;
+  lastBotStatus = "outage";
 });
 
-client.on("error", async (err) => {
-  console.error("Discord error:", err.message);
-  botOnline = false;
-
-  const lastEvent = await getLastIncidentEvent("Discord Bot");
-
-  if (lastEvent !== "outage") {
+client.on("error", async () => {
+  if (lastBotStatus !== "outage") {
     await logIncident("Discord Bot", "outage", "outage");
   }
+  botOnline = false;
+  lastBotStatus = "outage";
 });
 
 /* =========================
-   Crash Protection
+   Supabase Health Check
 ========================= */
 
-process.on("unhandledRejection", (err) => {
-  console.error("Unhandled promise rejection:", err);
-});
+async function checkSupabase() {
+  try {
+    const { error } = await supabase
+      .from("incidents")
+      .select("id")
+      .limit(1);
 
-process.on("uncaughtException", (err) => {
-  console.error("Uncaught exception:", err);
-});
+    if (error) throw error;
+
+    if (lastSupabaseStatus === "outage") {
+      await logIncident("Supabase Database", "recovery", "operational");
+    }
+
+    supabaseOnline = true;
+    lastSupabaseStatus = "operational";
+
+  } catch (err) {
+
+    if (lastSupabaseStatus !== "outage") {
+      await logIncident("Supabase Database", "outage", "outage");
+    }
+
+    supabaseOnline = false;
+    lastSupabaseStatus = "outage";
+  }
+}
+
+// Check every 15 seconds
+setInterval(checkSupabase, 15000);
+checkSupabase();
 
 /* =========================
    Start Bot
@@ -122,8 +118,7 @@ process.on("uncaughtException", (err) => {
 async function startBot() {
   try {
     await client.login(process.env.DISCORD_TOKEN);
-  } catch (err) {
-    console.error("Bot failed to login:", err.message);
+  } catch {
     botOnline = false;
   }
 }
@@ -136,15 +131,11 @@ startBot();
 
 app.get("/status", async (req, res) => {
 
-  const { data: incidents, error } = await supabase
+  const { data: incidents } = await supabase
     .from("incidents")
     .select("*")
     .order("created_at", { ascending: false })
     .limit(50);
-
-  if (error) {
-    console.error("Error fetching incidents:", error.message);
-  }
 
   const services = [
     {
@@ -154,6 +145,14 @@ app.get("/status", async (req, res) => {
       response_time: botOnline ? 85 : 0,
       error_rate: botOnline ? 0.01 : 100,
       description: "Handles announcements and automation."
+    },
+    {
+      name: "Supabase Database",
+      status: supabaseOnline ? "operational" : "outage",
+      uptime: supabaseOnline ? 99.99 : 0,
+      response_time: 45,
+      error_rate: supabaseOnline ? 0.01 : 100,
+      description: "Primary data storage and incident logging."
     },
     {
       name: "Status API",
@@ -189,27 +188,3 @@ const PORT = process.env.PORT || 8080;
 app.listen(PORT, () => {
   console.log(`API running on port ${PORT}`);
 });
-
-/* =========================
-   Active Health Monitor
-========================= */
-
-let previousStatus = null;
-
-async function monitorBot() {
-  const currentStatus = botOnline ? "operational" : "outage";
-
-  const lastEvent = await getLastIncidentEvent("Discord Bot");
-
-  if (currentStatus === "outage" && lastEvent !== "outage") {
-    await logIncident("Discord Bot", "outage", "outage");
-  }
-
-  if (currentStatus === "operational" && lastEvent === "outage") {
-    await logIncident("Discord Bot", "recovery", "operational");
-  }
-
-  previousStatus = currentStatus;
-}
-
-setInterval(monitorBot, 60000);
