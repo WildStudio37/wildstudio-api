@@ -23,11 +23,32 @@ const supabase = createClient(
 ========================= */
 
 let botOnline = false;
-let lastBotStatus = null;
 
 const client = new Client({
   intents: [GatewayIntentBits.Guilds]
 });
+
+/* =========================
+   Incident Helpers
+========================= */
+
+async function getLastIncidentEvent(service) {
+  const { data, error } = await supabase
+    .from("incidents")
+    .select("event_type")
+    .eq("service_name", service)
+    .order("created_at", { ascending: false })
+    .limit(1);
+
+  if (error) {
+    console.error("Error fetching last incident:", error.message);
+    return null;
+  }
+
+  if (!data || data.length === 0) return null;
+
+  return data[0].event_type;
+}
 
 async function logIncident(service, eventType, status) {
   try {
@@ -45,41 +66,45 @@ async function logIncident(service, eventType, status) {
   }
 }
 
+/* =========================
+   Discord Events
+========================= */
+
 client.on("clientReady", async () => {
   console.log("Bot connected");
+  botOnline = true;
 
-  if (lastBotStatus === "outage") {
+  const lastEvent = await getLastIncidentEvent("Discord Bot");
+
+  if (lastEvent === "outage") {
     await logIncident("Discord Bot", "recovery", "operational");
   }
-
-  botOnline = true;
-  lastBotStatus = "operational";
 });
 
 client.on("disconnect", async () => {
   console.log("Bot disconnected");
+  botOnline = false;
 
-  if (lastBotStatus !== "outage") {
+  const lastEvent = await getLastIncidentEvent("Discord Bot");
+
+  if (lastEvent !== "outage") {
     await logIncident("Discord Bot", "outage", "outage");
   }
-
-  botOnline = false;
-  lastBotStatus = "outage";
 });
 
 client.on("error", async (err) => {
   console.error("Discord error:", err.message);
+  botOnline = false;
 
-  if (lastBotStatus !== "outage") {
+  const lastEvent = await getLastIncidentEvent("Discord Bot");
+
+  if (lastEvent !== "outage") {
     await logIncident("Discord Bot", "outage", "outage");
   }
-
-  botOnline = false;
-  lastBotStatus = "outage";
 });
 
 /* =========================
-   Global Crash Protection
+   Crash Protection
 ========================= */
 
 process.on("unhandledRejection", (err) => {
@@ -111,11 +136,15 @@ startBot();
 
 app.get("/status", async (req, res) => {
 
-  const { data: incidents } = await supabase
+  const { data: incidents, error } = await supabase
     .from("incidents")
     .select("*")
     .order("created_at", { ascending: false })
     .limit(50);
+
+  if (error) {
+    console.error("Error fetching incidents:", error.message);
+  }
 
   const services = [
     {
