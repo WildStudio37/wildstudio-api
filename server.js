@@ -189,3 +189,27 @@ const PORT = process.env.PORT || 8080;
 app.listen(PORT, () => {
   console.log(`API running on port ${PORT}`);
 });
+
+/* =========================
+   Active Health Monitor
+========================= */
+
+let previousStatus = null;
+
+async function monitorBot() {
+  const currentStatus = botOnline ? "operational" : "outage";
+
+  const lastEvent = await getLastIncidentEvent("Discord Bot");
+
+  if (currentStatus === "outage" && lastEvent !== "outage") {
+    await logIncident("Discord Bot", "outage", "outage");
+  }
+
+  if (currentStatus === "operational" && lastEvent === "outage") {
+    await logIncident("Discord Bot", "recovery", "operational");
+  }
+
+  previousStatus = currentStatus;
+}
+
+setInterval(monitorBot, 60000);
