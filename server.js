@@ -14,8 +14,17 @@ const client = new Client({
   intents: [GatewayIntentBits.Guilds]
 });
 
+async function startBot() {
+  try {
+    await client.login(process.env.DISCORD_TOKEN);
+  } catch (err) {
+    console.error("Bot failed to login:", err.message);
+    botOnline = false;
+  }
+}
+
 client.on("clientReady", () => {
-  console.log(`Bot ready as ${client.user.tag}`);
+  console.log("Bot connected");
   botOnline = true;
 });
 
@@ -24,10 +33,20 @@ client.on("disconnect", () => {
   botOnline = false;
 });
 
-client.on("error", () => {
-  console.log("Bot error");
+client.on("error", (err) => {
+  console.error("Discord error:", err.message);
   botOnline = false;
 });
+
+process.on("unhandledRejection", (err) => {
+  console.error("Unhandled promise rejection:", err);
+});
+
+process.on("uncaughtException", (err) => {
+  console.error("Uncaught exception:", err);
+});
+
+startBot();
 
 client.login(process.env.DISCORD_TOKEN);
 
@@ -40,15 +59,15 @@ app.get("/status", (req, res) => {
       uptime: botOnline ? 99.99 : 0,
       response_time: botOnline ? 85 : 0,
       error_rate: botOnline ? 0.01 : 100,
-      description: "Handles automation, announcements and monitoring."
+      description: "Handles Announcements"
     },
     {
-      name: "WildStudio API",
+      name: "Status API",
       status: "operational",
       uptime: 99.98,
       response_time: 120,
       error_rate: 0.02,
-      description: "Core backend API powering website and automation."
+      description: ""
     }
   ];
 
