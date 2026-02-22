@@ -144,10 +144,10 @@ app.get("/status", async (req, res) => {
       uptime: botOnline ? 99.99 : 0,
       response_time: botOnline ? 85 : 0,
       error_rate: botOnline ? 0.01 : 100,
-      description: "Handles announcements and automation."
+      description: "Handles Announcements and Automations"
     },
     {
-      name: "Supabase Database",
+      name: "Database",
       status: supabaseOnline ? "operational" : "outage",
       uptime: supabaseOnline ? 99.99 : 0,
       response_time: 45,
